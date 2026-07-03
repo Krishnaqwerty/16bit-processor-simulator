@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>16-Bit Processor Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* CPU Component Styles */
+        .cpu-box {
+            position: absolute;
+            background: rgba(30, 41, 59, 0.8);
+            border: 2px solid #475569;
+            border-radius: 8px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: all 0.3s ease;
+            z-index: 10;
+            backdrop-filter: blur(4px);
+        }
+
+        .cpu-box h3 {
+            font-size: 0.875rem;
+            font-weight: bold;
+            color: #94a3b8;
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .cpu-box .value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.25rem;
+            color: #38bdf8;
+        }
+
+        /* Component specific positioning */
+        #pc-box { top: 10%; left: 8%; width: 150px; }
+        #ir-box { top: 40%; left: 8%; width: 160px; }
+        #cu-box { top: 68%; left: 6%; width: 190px; height: auto; min-height: 120px; }
+        
+        #mem-box { top: 10%; left: 45%; width: 200px; height: 180px; }
+        #alu-box { 
+            top: 65%; left: 42%; width: 200px; height: 160px;
+            clip-path: polygon(0 0, 100% 15%, 100% 85%, 0 100%, 0 65%, 15% 50%, 0 35%);
+            padding: 0;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #reg-box { top: 40%; left: 75%; width: 180px; height: auto; }
+
+        /* Component Active States */
+        .active-fetch { border-color: #3b82f6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); }
+        .active-decode { border-color: #a855f7; box-shadow: 0 0 15px rgba(168, 85, 247, 0.5); }
+        .active-execute { border-color: #10b981; box-shadow: 0 0 15px rgba(16, 185, 129, 0.5); }
+
+        /* Internal Sub-components */
+        .internal-block {
+            border: 1px solid #475569;
+            border-radius: 4px;
+            padding: 4px 6px;
+            text-align: center;
+            background-color: #020617;
+            color: #e2e8f0;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            z-index: 20;
+        }
+        .sig-active { background-color: #3b82f6; border-color: #93c5fd; color: #fff; box-shadow: 0 0 10px rgba(59, 130, 246, 0.8); }
+        .alu-active-op { background-color: #f59e0b; border-color: #fcd34d; color: #fff; box-shadow: 0 0 10px rgba(245, 158, 11, 0.8); }
+        .pc-active-op { background-color: #10b981; border-color: #6ee7b7; color: #fff; box-shadow: 0 0 10px rgba(16, 185, 129, 0.8); }
+        
+        /* PCB Bus Aesthetics */
+        svg.buses {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+        }
+
+        .pcb-trace-bg {
+            fill: none;
+            stroke: #0f172a; /* Dark base trace */
+            stroke-width: 8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .pcb-trace-fg {
+            fill: none;
+            stroke: #475569; /* Metallic inner trace */
+            stroke-width: 4;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .bus-data-flow {
+            fill: none;
+            stroke-width: 4;
+            stroke-dasharray: 10, 15;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        /* Flow Animation */
+        @keyframes pcbFlow {
+            to { stroke-dashoffset: -25; }
+        }
+
+        .active-flow {
+            opacity: 1;
+            animation: pcbFlow 0.5s linear infinite;
+        }
+
+        /* Data Type Colors */
+        .flow-address { stroke: #38bdf8; filter: drop-shadow(0 0 6px #38bdf8); }
+        .flow-data { stroke: #fbbf24; filter: drop-shadow(0 0 6px #fbbf24); }
+        .flow-control { stroke: #a855f7; filter: drop-shadow(0 0 6px #a855f7); }
+        .flow-exec { stroke: #10b981; filter: drop-shadow(0 0 6px #10b981); }
+        
+        /* Via points (Solder pads) */
+        .pcb-via {
+            fill: #64748b;
+            stroke: #0f172a;
+            stroke-width: 2;
+        }
+
+        /* ALU specific text positioning */
+        .alu-label { position: absolute; font-size: 0.75rem; color: #94a3b8; }
+        .alu-op { font-size: 1.5rem; color: #f59e0b; font-weight: bold; }
+
+        .editor-textarea {
+            background-color: #1e293b;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+        }
+        
+        .editor-textarea:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .editor-readonly {
+            background-color: #0f172a;
+            color: #64748b;
+            border: 1px solid #1e293b;
+            cursor: not-allowed;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col lg:flex-row">
+
+    <!-- Sidebar / Controls (Responsive widths & heights) -->
+    <div class="w-full lg:w-[24rem] xl:w-[26rem] bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-700 flex flex-col h-[55vh] lg:h-full z-20 shadow-xl flex-shrink-0 overflow-y-auto lg:overflow-hidden">
+        
+        <div class="p-4 border-b border-slate-700 flex-shrink-0">
+            <h1 class="text-xl font-bold text-white flex items-center gap-2">
+                <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+                Simple16 ISA
+            </h1>
+            <p class="text-xs text-slate-400 mt-1">16-bit Architecture Simulator</p>
+        </div>
+
+        <!-- Assembly Editor -->
+        <div class="flex-none lg:flex-1 flex flex-col p-4 border-b border-slate-700">
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="text-sm font-semibold text-slate-300">High-Level Code</h2>
+                <select id="example-select" onchange="loadExample()" class="text-xs bg-slate-800 text-slate-300 border border-slate-700 rounded p-1 hover:border-slate-500 focus:border-blue-500 outline-none cursor-pointer max-w-[140px]">
+                    <option value="0">1. Basic Assignment</option>
+                    <option value="1">2. Simple Addition</option>
+                    <option value="2">3. Simple Subtract</option>
+                    <option value="3">4. Variable Copy</option>
+                    <option value="4" selected>5. Chained Math</option>
+                    <option value="5">6. Multiply by 2</option>
+                    <option value="6">7. Multiply by 4</option>
+                    <option value="7">8. Swap Variables</option>
+                    <option value="8">9. Countdown</option>
+                    <option value="9">10. Fibonacci</option>
+                </select>
+            </div>
+            <textarea id="hll-code" class="h-24 lg:flex-none editor-textarea mono rounded p-2 text-sm resize-none whitespace-pre mb-2" spellcheck="false">
+var a = 10
+var b = 20
+var c = 30
+var total = a + b
+total = total + c</textarea>
+            
+            <h2 class="text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider mt-2">Compiled Assembly</h2>
+            <textarea id="assembly-code" class="h-24 lg:flex-1 editor-readonly mono rounded p-2 text-xs resize-none whitespace-pre" spellcheck="false" readonly placeholder="Compiled assembly will appear here..."></textarea>
+            
+            <div class="flex gap-2 mt-3">
+                <button onclick="compileAndAssemble()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded text-sm font-semibold transition-colors">Compile & Load</button>
+            </div>
+            <div id="assembler-error" class="text-red-400 text-xs mt-2 hidden mono"></div>
+        </div>
+
+        <!-- Controls -->
+        <div class="p-4 border-b border-slate-700 flex-shrink-0">
+            <h2 class="text-sm font-semibold text-slate-300 mb-3">Simulation Controls</h2>
+            <div class="flex gap-2">
+                <button id="btn-step" onclick="step()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded text-sm transition-colors disabled:opacity-50" disabled>Step</button>
+                <button id="btn-run" onclick="toggleRun()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded text-sm transition-colors disabled:opacity-50" disabled>Run</button>
+                <button onclick="resetCPU()" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-2 rounded text-sm transition-colors">Reset</button>
+            </div>
+            
+            <div class="mt-4 flex items-center justify-between">
+                <span class="text-xs text-slate-400">Simulation Speed:</span>
+                <input type="range" id="speed-slider" min="100" max="2000" value="1200" class="w-1/2">
+            </div>
+
+            <div class="mt-4 bg-slate-800 p-3 rounded border border-slate-700">
+                <div class="text-xs text-slate-400 mb-1 uppercase tracking-wider font-semibold">Current Phase</div>
+                <div id="phase-indicator" class="text-lg font-bold text-slate-500 tracking-widest mono">IDLE</div>
+            </div>
+        </div>
+        
+        <!-- Status -->
+        <div class="p-4 bg-slate-950 flex-none lg:flex-1 min-h-[150px] overflow-y-auto">
+             <h2 class="text-sm font-semibold text-slate-300 mb-2">System Log</h2>
+             <div id="sys-log" class="text-xs text-slate-400 mono flex flex-col gap-1">
+                 <div>> System initialized.</div>
+             </div>
+        </div>
+    </div>
+
+    <!-- Main Datapath Canvas (Responsive Container) -->
+    <div class="flex-1 relative bg-slate-800 overflow-hidden flex items-center justify-center" id="diagram-area">
+        
+        <!-- Grid Background (Fills entire area) -->
+        <div class="absolute inset-0" style="background-image: radial-gradient(#334155 1px, transparent 1px); background-size: 20px 20px; opacity: 0.3; z-index: 1;"></div>
+
+        <!-- Scalable Diagram Content (Fixed Aspect Ratio) -->
+        <div id="diagram-content" class="relative w-[1000px] h-[750px] origin-center flex-shrink-0" style="z-index: 2;">
+            
+            <!-- SVG for Connecting Buses (PCB Style) -->
+            <svg class="buses" preserveAspectRatio="none">
+                <defs>
+                    <!-- Paths defined once for perfect reuse -->
+                    <path id="p-bus-address" d="M 18% 15% L 45% 15%" />
+                    <path id="p-bus-data-mem-ir" d="M 45% 25% L 35% 25% L 35% 45% L 20% 45%" />
+                    <path id="p-bus-inst" d="M 14% 53% L 14% 68%" />
+                    <path id="p-bus-control" d="M 18% 75% L 42% 75%" />
+                    <path id="p-bus-reg-a" d="M 75% 45% L 65% 45% L 65% 68% L 55% 68%" />
+                    <path id="p-bus-reg-b" d="M 75% 55% L 68% 55% L 68% 75% L 55% 75%" />
+                    <path id="p-bus-result" d="M 50% 88% L 50% 95% L 85% 95% L 85% 70% L 80% 70%" />
+                    <path id="p-bus-imm" d="M 20% 48% L 30% 48% L 30% 68% L 42% 68%" />
+                </defs>
+
+                <!-- Background Traces (Dark board lines) -->
+                <g class="pcb-trace-bg">
+                    <use href="#p-bus-address" />
+                    <use href="#p-bus-data-mem-ir" />
+                    <use href="#p-bus-inst" />
+                    <use href="#p-bus-control" />
+                    <use href="#p-bus-reg-a" />
+                    <use href="#p-bus-reg-b" />
+                    <use href="#p-bus-result" />
+                    <use href="#p-bus-imm" />
+                </g>
+
+                <!-- Foreground Traces (Metallic unlit lines) -->
+                <g class="pcb-trace-fg">
+                    <use href="#p-bus-address" />
+                    <use href="#p-bus-data-mem-ir" />
+                    <use href="#p-bus-inst" />
+                    <use href="#p-bus-control" />
+                    <use href="#p-bus-reg-a" />
+                    <use href="#p-bus-reg-b" />
+                    <use href="#p-bus-result" />
+                    <use href="#p-bus-imm" />
+                </g>
+
+                <!-- Animated Active Data Flows -->
+                <use href="#p-bus-address" id="bus-address" class="bus-data-flow flow-address" />
+                <use href="#p-bus-data-mem-ir" id="bus-data-mem-ir" class="bus-data-flow flow-data" />
+                <use href="#p-bus-inst" id="bus-inst" class="bus-data-flow flow-data" />
+                <use href="#p-bus-control" id="bus-control" class="bus-data-flow flow-control" />
+                <use href="#p-bus-reg-a" id="bus-reg-a" class="bus-data-flow flow-exec" />
+                <use href="#p-bus-reg-b" id="bus-reg-b" class="bus-data-flow flow-exec" />
+                <use href="#p-bus-result" id="bus-result" class="bus-data-flow flow-exec" />
+                <use href="#p-bus-imm" id="bus-imm" class="bus-data-flow flow-exec" />
+                
+                <!-- Vias / Solder pads at key junctions -->
+                <circle cx="18%" cy="15%" r="5" class="pcb-via" />
+                <circle cx="45%" cy="15%" r="5" class="pcb-via" />
+                <circle cx="45%" cy="25%" r="5" class="pcb-via" />
+                <circle cx="20%" cy="45%" r="5" class="pcb-via" />
+                <circle cx="14%" cy="53%" r="5" class="pcb-via" />
+                <circle cx="14%" cy="68%" r="5" class="pcb-via" />
+                <circle cx="18%" cy="75%" r="5" class="pcb-via" />
+                <circle cx="42%" cy="75%" r="5" class="pcb-via" />
+                <circle cx="75%" cy="45%" r="5" class="pcb-via" />
+                <circle cx="55%" cy="68%" r="5" class="pcb-via" />
+                <circle cx="75%" cy="55%" r="5" class="pcb-via" />
+                <circle cx="55%" cy="75%" r="5" class="pcb-via" />
+                <circle cx="50%" cy="88%" r="5" class="pcb-via" />
+                <circle cx="80%" cy="70%" r="5" class="pcb-via" />
+            </svg>
+
+            <!-- Program Counter -->
+            <div id="pc-box" class="cpu-box">
+                <h3>Program Counter</h3>
+                <div class="flex items-center gap-2 w-full justify-center mt-1">
+                    <div id="pc-adder" class="internal-block text-[10px] px-1">+1</div>
+                    <div class="text-slate-500 text-xs">→</div>
+                    <div id="reg-pc" class="value text-lg">0x00</div>
+                </div>
+            </div>
+
+            <!-- Instruction Register -->
+            <div id="ir-box" class="cpu-box">
+                <h3>IR</h3>
+                <div id="reg-ir" class="value text-sm">0x0000</div>
+                <div id="reg-ir-decode" class="text-xs text-slate-400 mt-1 mono">NOP</div>
+            </div>
+
+            <!-- Control Unit -->
+            <div id="cu-box" class="cpu-box">
+                <h3>Control Unit</h3>
+                <div id="cu-status" class="text-xs text-slate-300 mono text-center mb-2 bg-slate-900/50 w-full py-1 rounded">Awaiting Instr...</div>
+                <div class="grid grid-cols-2 gap-1 w-full text-[9px] mono">
+                    <div id="sig-mem-read" class="internal-block">MemRead</div>
+                    <div id="sig-reg-write" class="internal-block">RegWrite</div>
+                    <div id="sig-alu-src" class="internal-block">ALUSrc</div>
+                    <div id="sig-pc-inc" class="internal-block">PC+1</div>
+                </div>
+            </div>
+
+            <!-- Memory -->
+            <div id="mem-box" class="cpu-box justify-start items-stretch p-0 overflow-hidden">
+                <h3 class="p-2 border-b border-slate-600 bg-slate-800/50 text-center m-0">Memory (RAM)</h3>
+                <div class="overflow-y-auto flex-1 p-2 mono text-xs" id="memory-list">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- ALU -->
+            <div id="alu-box" class="cpu-box relative">
+                <h3 class="absolute top-2 left-6">ALU</h3>
+                <span class="alu-label" style="top: 20%; left: 10px;">A</span>
+                <span class="alu-label" style="top: 75%; left: 10px;">B</span>
+                <span class="alu-label" style="bottom: 8px; left: 45%;">R</span>
+                
+                <div class="absolute top-1/2 left-[45%] -translate-x-1/2 -translate-y-1/2 flex flex-col gap-1.5 text-[10px] mono w-24">
+                    <div id="alu-add" class="internal-block">+ Adder</div>
+                    <div id="alu-sub" class="internal-block">- Subtractor</div>
+                    <div id="alu-pass" class="internal-block">-> Pass</div>
+                </div>
+                
+                <div id="alu-op" class="absolute right-4 top-1/2 -translate-y-1/2 alu-op mono">-</div>
+            </div>
+
+            <!-- Register File -->
+            <div id="reg-box" class="cpu-box justify-start items-stretch p-0 overflow-hidden">
+                <h3 class="p-2 border-b border-slate-600 bg-slate-800/50 text-center m-0">Registers</h3>
+                <div class="flex flex-col p-2 gap-1 mono text-sm w-full">
+                    <div class="flex justify-between items-center px-2 py-1 rounded bg-slate-800/50" id="ui-r0">
+                        <span class="text-slate-400">R0</span><span class="text-blue-300 value">0x0000</span>
+                    </div>
+                    <div class="flex justify-between items-center px-2 py-1 rounded bg-slate-800/50" id="ui-r1">
+                        <span class="text-slate-400">R1</span><span class="text-blue-300 value">0x0000</span>
+                    </div>
+                    <div class="flex justify-between items-center px-2 py-1 rounded bg-slate-800/50" id="ui-r2">
+                        <span class="text-slate-400">R2</span><span class="text-blue-300 value">0x0000</span>
+                    </div>
+                    <div class="flex justify-between items-center px-2 py-1 rounded bg-slate-800/50" id="ui-r3">
+                        <span class="text-slate-400">R3</span><span class="text-blue-300 value">0x0000</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Architecture Description Note -->
+            <div class="absolute bottom-4 left-4 text-slate-500 text-xs w-64">
+                <p><strong>16-bit ISA:</strong></p>
+                <p>Opcode: 4 bits, Operands: 12 bits.</p>
+                <p>Instructions: LDI, ADD, SUB, MOV, HLT.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Responsive Scaling Logic
+         * Scales the fixed 1000x750 canvas down/up to fit perfectly inside the area
+         * without breaking positional % mappings.
+         */
+        function resizeDiagram() {
+            const wrapper = document.getElementById('diagram-area');
+            const content = document.getElementById('diagram-content');
+            if (!wrapper || !content) return;
+            
+            const wWidth = wrapper.clientWidth;
+            const wHeight = wrapper.clientHeight;
+            
+            // Fixed base size matching our CSS width/height
+            const baseWidth = 1000;
+            const baseHeight = 750;
+            
+            // Figure out how much we need to scale to fit
+            const scaleX = wWidth / baseWidth;
+            const scaleY = wHeight / baseHeight;
+            const scale = Math.min(scaleX, scaleY) * 0.95; // 95% gives a tiny padding
+            
+            content.style.transform = `scale(${scale})`;
+        }
+
+        // Attach resize listener
+        window.addEventListener('resize', resizeDiagram);
+
+
+        /**
+         * 16-Bit CPU Architecture Simulation
+         */
+        const OPCODES = { NOP: 0, LDI: 1, ADD: 2, SUB: 3, MOV: 4, HLT: 15 };
+        const STATE = { IDLE: 'IDLE', FETCH: 'FETCH', DECODE: 'DECODE', EXECUTE: 'EXECUTE', HALTED: 'HALTED' };
+
+        // CPU State
+        let cpu = {
+            pc: 0, ir: 0, registers: [0, 0, 0, 0], memory: new Array(16).fill(0),
+            state: STATE.IDLE, decodedOp: null, decodedArgs: []
+        };
+
+        let isRunning = false;
+        let runTimer = null;
+
+        // --- Core Simulation Logic ---
+        function toHex16(num) { return '0x' + (num & 0xFFFF).toString(16).padStart(4, '0').toUpperCase(); }
+        function toHex8(num) { return '0x' + (num & 0xFF).toString(16).padStart(2, '0').toUpperCase(); }
+
+        function logInfo(msg) {
+            const logPanel = document.getElementById('sys-log');
+            const entry = document.createElement('div');
+            entry.textContent = `> ${msg}`;
+            logPanel.appendChild(entry);
+            logPanel.scrollTop = logPanel.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('sys-log').innerHTML = '';
+            logInfo('System initialized.');
+        }
+
+        function updateUI() {
+            document.getElementById('reg-pc').innerText = toHex8(cpu.pc);
+            document.getElementById('reg-ir').innerText = toHex16(cpu.ir);
+            
+            for (let i = 0; i < 4; i++) {
+                document.querySelector(`#ui-r${i} .value`).innerText = toHex16(cpu.registers[i]);
+            }
+
+            const memList = document.getElementById('memory-list');
+            memList.innerHTML = '';
+            for (let i = 0; i < cpu.memory.length; i++) {
+                const row = document.createElement('div');
+                row.className = `flex justify-between px-1 py-0.5 ${i === cpu.pc ? 'bg-blue-900/50 text-blue-300' : ''}`;
+                row.innerHTML = `<span>${toHex8(i)}</span><span>${toHex16(cpu.memory[i])}</span>`;
+                memList.appendChild(row);
+            }
+
+            const phaseEl = document.getElementById('phase-indicator');
+            phaseEl.innerText = cpu.state;
+            phaseEl.className = 'text-lg font-bold tracking-widest mono ' + 
+                (cpu.state === 'FETCH' ? 'text-blue-500' : 
+                 cpu.state === 'DECODE' ? 'text-purple-500' : 
+                 cpu.state === 'EXECUTE' ? 'text-emerald-500' : 
+                 cpu.state === 'HALTED' ? 'text-rose-500' : 'text-slate-500');
+
+            document.getElementById('btn-step').disabled = cpu.state === STATE.HALTED || cpu.state === STATE.IDLE;
+            document.getElementById('btn-run').disabled = cpu.state === STATE.HALTED || cpu.state === STATE.IDLE;
+        }
+
+        function clearVisuals() {
+            document.querySelectorAll('.cpu-box').forEach(el => { el.classList.remove('active-fetch', 'active-decode', 'active-execute'); });
+            document.querySelectorAll('.bus-data-flow').forEach(el => { el.classList.remove('active-flow'); });
+            document.querySelectorAll('.internal-block').forEach(el => { el.classList.remove('sig-active', 'alu-active-op', 'pc-active-op'); });
+            document.getElementById('alu-op').innerText = '-';
+            document.getElementById('cu-status').innerText = 'Awaiting Instr...';
+        }
+
+        function setVisualState(phase, components, buses) {
+            clearVisuals();
+            const phaseClassMap = { 'FETCH': 'active-fetch', 'DECODE': 'active-decode', 'EXECUTE': 'active-execute' };
+            const activeClass = phaseClassMap[phase];
+
+            components.forEach(id => { const el = document.getElementById(id); if(el) el.classList.add(activeClass); });
+            buses.forEach(id => { const el = document.getElementById(id); if(el) el.classList.add('active-flow'); });
+        }
+        
+        function activateInternal(id, activeClass) {
+            const el = document.getElementById(id);
+            if(el) el.classList.add(activeClass);
+        }
+
+        function performFetch() {
+            cpu.state = STATE.FETCH;
+            cpu.ir = cpu.memory[cpu.pc];
+            
+            setVisualState('FETCH', ['pc-box', 'mem-box', 'ir-box'], ['bus-address', 'bus-data-mem-ir']);
+            activateInternal('pc-adder', 'pc-active-op');
+            activateInternal('sig-pc-inc', 'sig-active');
+            activateInternal('sig-mem-read', 'sig-active');
+            
+            logInfo(`FETCH: PC=${toHex8(cpu.pc)}, loaded IR=${toHex16(cpu.ir)}`);
+            
+            cpu.pc = (cpu.pc + 1) & 0xFF; // increment PC
+            updateUI();
+        }
+
+        function performDecode() {
+            cpu.state = STATE.DECODE;
+            const opcode = (cpu.ir >> 12) & 0xF;
+            const arg1 = (cpu.ir >> 8) & 0xF;
+            const arg2 = (cpu.ir >> 4) & 0xF;
+            const arg3 = cpu.ir & 0xF;
+
+            cpu.decodedOp = opcode;
+            cpu.decodedArgs = [arg1, arg2, arg3];
+
+            let instrStr = "NOP";
+            switch(opcode) {
+                case OPCODES.LDI: instrStr = `LDI R${arg1}, #${(arg2<<4 | arg3)}`; break;
+                case OPCODES.ADD: instrStr = `ADD R${arg1}, R${arg2}, R${arg3}`; break;
+                case OPCODES.SUB: instrStr = `SUB R${arg1}, R${arg2}, R${arg3}`; break;
+                case OPCODES.MOV: instrStr = `MOV R${arg1}, R${arg2}`; break;
+                case OPCODES.HLT: instrStr = `HLT`; break;
+                default: instrStr = `UNKNOWN`;
+            }
+
+            document.getElementById('reg-ir-decode').innerText = instrStr;
+            document.getElementById('cu-status').innerText = `Decoded: ${instrStr.split(' ')[0]}`;
+
+            setVisualState('DECODE', ['ir-box', 'cu-box'], ['bus-inst']);
+            logInfo(`DECODE: ${instrStr}`);
+            updateUI();
+        }
+
+        function performExecute() {
+            cpu.state = STATE.EXECUTE;
+            const op = cpu.decodedOp;
+            const args = cpu.decodedArgs;
+            
+            let activeComps = ['cu-box'];
+            let activeBuses = ['bus-control'];
+            let aluSymbol = '-';
+            let activeInternals = [];
+
+            switch(op) {
+                case OPCODES.NOP:
+                    break;
+                case OPCODES.LDI: 
+                    const imm = (args[1] << 4) | args[2];
+                    cpu.registers[args[0]] = imm;
+                    activeComps.push('reg-box');
+                    activeBuses.push('bus-imm', 'bus-result');
+                    activeInternals.push(['alu-pass', 'alu-active-op']);
+                    activeInternals.push(['sig-reg-write', 'sig-active']);
+                    activeInternals.push(['sig-alu-src', 'sig-active']);
+                    logInfo(`EXEC: Loaded ${imm} into R${args[0]}`);
+                    break;
+                case OPCODES.ADD: 
+                    cpu.registers[args[0]] = (cpu.registers[args[1]] + cpu.registers[args[2]]) & 0xFFFF;
+                    activeComps.push('reg-box', 'alu-box');
+                    activeBuses.push('bus-reg-a', 'bus-reg-b', 'bus-result');
+                    aluSymbol = '+';
+                    activeInternals.push(['alu-add', 'alu-active-op']);
+                    activeInternals.push(['sig-reg-write', 'sig-active']);
+                    logInfo(`EXEC: R${args[0]} = R${args[1]} + R${args[2]} (${cpu.registers[args[0]]})`);
+                    break;
+                case OPCODES.SUB: 
+                    cpu.registers[args[0]] = (cpu.registers[args[1]] - cpu.registers[args[2]]) & 0xFFFF;
+                    activeComps.push('reg-box', 'alu-box');
+                    activeBuses.push('bus-reg-a', 'bus-reg-b', 'bus-result');
+                    aluSymbol = '-';
+                    activeInternals.push(['alu-sub', 'alu-active-op']);
+                    activeInternals.push(['sig-reg-write', 'sig-active']);
+                    logInfo(`EXEC: R${args[0]} = R${args[1]} - R${args[2]} (${cpu.registers[args[0]]})`);
+                    break;
+                case OPCODES.MOV: 
+                    cpu.registers[args[0]] = cpu.registers[args[1]];
+                    activeComps.push('reg-box');
+                    activeBuses.push('bus-reg-a', 'bus-result');
+                    activeInternals.push(['alu-pass', 'alu-active-op']);
+                    activeInternals.push(['sig-reg-write', 'sig-active']);
+                    logInfo(`EXEC: Moved R${args[1]} to R${args[0]}`);
+                    break;
+                case OPCODES.HLT:
+                    cpu.state = STATE.HALTED;
+                    logInfo(`EXEC: CPU Halted.`);
+                    if(isRunning) toggleRun();
+                    break;
+                default:
+                    logInfo(`EXEC: Unknown operation. Halted.`);
+                    cpu.state = STATE.HALTED;
+            }
+
+            document.getElementById('alu-op').innerText = aluSymbol;
+            setVisualState('EXECUTE', activeComps, activeBuses);
+            activeInternals.forEach(internal => activateInternal(internal[0], internal[1]));
+            
+            if (op === OPCODES.ADD || op === OPCODES.SUB) {
+                highlightReg(args[1], 'text-blue-400');
+                highlightReg(args[2], 'text-blue-400');
+                highlightReg(args[0], 'text-emerald-400');
+            } else if (op === OPCODES.LDI || op === OPCODES.MOV) {
+                highlightReg(args[0], 'text-emerald-400');
+            }
+
+            updateUI();
+        }
+
+        function highlightReg(index, colorClass) {
+            const el = document.querySelector(`#ui-r${index}`);
+            const original = el.className;
+            el.className += ` ring-1 ring-inset ring-white ${colorClass}`;
+            setTimeout(() => { el.className = original; }, 800);
+        }
+
+        function step() {
+            if (cpu.state === STATE.HALTED || cpu.state === STATE.IDLE) return;
+            const pIndicator = document.getElementById('phase-indicator').innerText;
+            if (pIndicator === STATE.FETCH) { performDecode(); } 
+            else if (pIndicator === STATE.DECODE) { performExecute(); } 
+            else if (pIndicator === STATE.EXECUTE) { clearVisuals(); performFetch(); }
+        }
+
+        function toggleRun() {
+            const btn = document.getElementById('btn-run');
+            const stepBtn = document.getElementById('btn-step');
+            
+            if (isRunning) {
+                isRunning = false;
+                clearTimeout(runTimer);
+                btn.innerText = 'Run';
+                btn.classList.replace('bg-rose-600', 'bg-emerald-600');
+                btn.classList.replace('hover:bg-rose-500', 'hover:bg-emerald-500');
+                stepBtn.disabled = false;
+            } else {
+                if (cpu.state === STATE.HALTED || cpu.state === STATE.IDLE) return;
+                isRunning = true;
+                btn.innerText = 'Stop';
+                btn.classList.replace('bg-emerald-600', 'bg-rose-600');
+                btn.classList.replace('hover:bg-emerald-500', 'hover:bg-rose-500');
+                stepBtn.disabled = true;
+                runLoop();
+            }
+        }
+
+        function runLoop() {
+            if (!isRunning) return;
+            step();
+            if (cpu.state !== STATE.HALTED) {
+                const speed = 2100 - parseInt(document.getElementById('speed-slider').value);
+                runTimer = setTimeout(runLoop, speed);
+            }
+        }
+
+        // --- High-Level Compiler ---
+        function compileHLL(code) {
+            const lines = code.split('\n');
+            let asm = [];
+            let vars = {}; 
+            let nextReg = 0;
+
+            function getReg(name) {
+                if (vars[name] !== undefined) return vars[name];
+                if (nextReg > 3) throw new Error(`Variable limit exceeded. CPU only has 4 registers.`);
+                vars[name] = nextReg++;
+                return vars[name];
+            }
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
+                if (!line || line.startsWith('//')) {
+                    if (line) asm.push(line);
+                    continue;
+                }
+                line = line.replace(/^var\s+/, ''); 
+                let parts = line.split('=').map(s => s.trim());
+                if (parts.length !== 2) throw new Error(`Syntax error on line ${i+1}: Expected 'x = y'`);
+                
+                let dest = parts[0];
+                let expr = parts[1];
+                let destReg = getReg(dest);
+
+                if (expr.includes('+')) {
+                    let ops = expr.split('+').map(s => s.trim());
+                    if(ops.length !== 2) throw new Error(`Line ${i+1}: Only simple A + B supported`);
+                    if (vars[ops[0]] === undefined || vars[ops[1]] === undefined) throw new Error(`Line ${i+1}: Undefined variable in addition`);
+                    asm.push(`ADD R${destReg}, R${vars[ops[0]]}, R${vars[ops[1]]}`);
+                } else if (expr.includes('-')) {
+                    let ops = expr.split('-').map(s => s.trim());
+                    if(ops.length !== 2) throw new Error(`Line ${i+1}: Only simple A - B supported`);
+                    if (vars[ops[0]] === undefined || vars[ops[1]] === undefined) throw new Error(`Line ${i+1}: Undefined variable in subtraction`);
+                    asm.push(`SUB R${destReg}, R${vars[ops[0]]}, R${vars[ops[1]]}`);
+                } else {
+                    if (!isNaN(expr)) {
+                        let val = parseInt(expr);
+                        if (val < 0 || val > 255) throw new Error(`Line ${i+1}: Value ${val} out of bounds (0-255)`);
+                        asm.push(`LDI R${destReg}, ${val}`);
+                    } else {
+                        if (vars[expr] === undefined) throw new Error(`Line ${i+1}: Undefined variable '${expr}'`);
+                        asm.push(`MOV R${destReg}, R${vars[expr]}`);
+                    }
+                }
+            }
+            asm.push('HLT');
+            return asm.join('\n');
+        }
+
+        // --- Assembler ---
+        function parseRegister(regStr) {
+            const r = parseInt(regStr.replace(/[^0-9]/g, ''));
+            if (isNaN(r) || r < 0 || r > 3) throw new Error(`Invalid register: ${regStr}`);
+            return r;
+        }
+
+        function compileAndAssemble() {
+            const hllCode = document.getElementById('hll-code').value;
+            const errDiv = document.getElementById('assembler-error');
+            
+            try {
+                const asmCode = compileHLL(hllCode);
+                document.getElementById('assembly-code').value = asmCode;
+                assemble(asmCode);
+            } catch (err) {
+                errDiv.innerText = err.message;
+                errDiv.classList.remove('hidden');
+                logInfo(`Compiler Error: ${err.message}`);
+                resetCPU();
+            }
+        }
+
+        function assemble(asmString) {
+            const code = asmString.trim().split('\n');
+            const errDiv = document.getElementById('assembler-error');
+            
+            resetCPU();
+            
+            try {
+                let memIdx = 0;
+                for (let i = 0; i < code.length; i++) {
+                    if (memIdx >= 16) throw new Error("Memory limit exceeded (16 words max).");
+                    
+                    let line = code[i].trim();
+                    if (!line || line.startsWith('//')) continue;
+
+                    const parts = line.replace(/,/g, ' ').split(/\s+/);
+                    const op = parts[0].toUpperCase();
+                    let machineCode = 0;
+
+                    if (op === 'NOP') {
+                        machineCode = (OPCODES.NOP << 12);
+                    } else if (op === 'HLT') {
+                        machineCode = (OPCODES.HLT << 12);
+                    } else if (op === 'LDI') {
+                        if (parts.length < 3) throw new Error(`Line ${i+1}: LDI requires Reg and Immediate`);
+                        const rd = parseRegister(parts[1]);
+                        const imm = parseInt(parts[2].replace(/[^0-9\-]/g, ''));
+                        if (isNaN(imm) || imm < 0 || imm > 255) throw new Error(`Line ${i+1}: Immediate out of bounds (0-255)`);
+                        machineCode = (OPCODES.LDI << 12) | (rd << 8) | imm; 
+                    } else if (op === 'ADD' || op === 'SUB') {
+                        if (parts.length < 4) throw new Error(`Line ${i+1}: ${op} requires Rd, Rs1, Rs2`);
+                        const rd = parseRegister(parts[1]);
+                        const rs1 = parseRegister(parts[2]);
+                        const rs2 = parseRegister(parts[3]);
+                        const opc = op === 'ADD' ? OPCODES.ADD : OPCODES.SUB;
+                        machineCode = (opc << 12) | (rd << 8) | (rs1 << 4) | rs2;
+                    } else if (op === 'MOV') {
+                        if (parts.length < 3) throw new Error(`Line ${i+1}: MOV requires Rd, Rs`);
+                        const rd = parseRegister(parts[1]);
+                        const rs = parseRegister(parts[2]);
+                        machineCode = (OPCODES.MOV << 12) | (rd << 8) | (rs << 4);
+                    } else {
+                        throw new Error(`Line ${i+1}: Unknown instruction '${op}'`);
+                    }
+
+                    cpu.memory[memIdx++] = machineCode;
+                }
+
+                errDiv.classList.add('hidden');
+                logInfo('Assembly successful. Loaded into memory.');
+                
+                cpu.state = STATE.FETCH; 
+                document.getElementById('btn-step').disabled = false;
+                document.getElementById('btn-run').disabled = false;
+                
+                updateUI();
+                performFetch(); 
+
+            } catch (err) {
+                errDiv.innerText = err.message;
+                errDiv.classList.remove('hidden');
+                logInfo(`Assembly Error: ${err.message}`);
+                cpu.state = STATE.IDLE;
+                updateUI();
+            }
+        }
+
+        function resetCPU() {
+            if (isRunning) toggleRun();
+            cpu = { pc: 0, ir: 0, registers: [0, 0, 0, 0], memory: new Array(16).fill(0), state: STATE.IDLE, decodedOp: null, decodedArgs: [] };
+            clearVisuals(); clearLog();
+            document.getElementById('reg-ir-decode').innerText = 'NOP';
+            updateUI();
+        }
+
+        const EXAMPLES = [
+            "// 1. Basic Assignment\nvar answer = 42",
+            "// 2. Simple Addition\nvar a = 15\nvar b = 25\nvar c = a + b",
+            "// 3. Simple Subtraction\nvar price = 50\nvar discount = 20\nvar final = price - discount",
+            "// 4. Variable Copy\nvar original = 99\nvar copy1 = original\nvar copy2 = copy1",
+            "// 5. Chained Arithmetic\nvar x = 10\nvar y = 20\nvar z = 30\nvar total = x + y\ntotal = total + z",
+            "// 6. Multiply by 2\nvar a = 15\nvar doubled = a + a",
+            "// 7. Multiply by 4\nvar num = 5\nvar temp = num + num\nvar quad = temp + temp",
+            "// 8. Swap Variables\nvar a = 11\nvar b = 99\nvar temp = a\na = b\nb = temp",
+            "// 9. Countdown\nvar counter = 5\nvar one = 1\ncounter = counter - one\ncounter = counter - one\ncounter = counter - one\ncounter = counter - one\ncounter = counter - one",
+            "// 10. Fibonacci Sequence\nvar a = 0\nvar b = 1\nvar c = a + b\nvar d = b + c\na = c + d\nb = d + a\nc = a + b"
+        ];
+
+        function loadExample() {
+            const select = document.getElementById('example-select');
+            document.getElementById('hll-code').value = EXAMPLES[select.value];
+        }
+
+        // Initialize on load
+        compileAndAssemble();
+        resizeDiagram(); // Call initially to calculate initial scale
+
+    </script>
+</body>
+</html>
